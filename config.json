@@ -2,6 +2,7 @@
   "movie_name": "The Odyssey",
   "city": "Chennai",
   "theatre_name": "PVR: Palazzo, The Nexus Vijaya Mall",
-  "date": "2026-07-19",
-  "formats": "IMAX"
+  "date": "2026-07-23",
+  "formats": "IMAX",
+  "bookmyshow_retry_delay_seconds": 75
 }

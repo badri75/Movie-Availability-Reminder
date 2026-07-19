@@ -18,7 +18,7 @@ It blocks images, media, and fonts to keep each check lightweight.
 
 ## Configuration
 
-`config.json` intentionally accepts exactly five fields:
+`config.json` intentionally accepts exactly six fields:
 
 ```json
 {
@@ -26,12 +26,16 @@ It blocks images, media, and fonts to keep each check lightweight.
   "city": "Chennai",
   "theatre_name": "PVR: Palazzo, The Nexus Vijaya Mall",
   "date": "2026-07-22",
-  "formats": "IMAX"
+  "formats": "IMAX",
+  "bookmyshow_retry_delay_seconds": 90
 }
 ```
 
 Use a semicolon-separated value such as `"2D;IMAX"` to include multiple
 formats. Use an empty string, `"formats": ""`, to return every format.
+
+If a BookMyShow check fails with a site/browser error, the monitor waits
+`bookmyshow_retry_delay_seconds` and starts that check again once.
 
 Telegram credentials must never be added to that file.
 

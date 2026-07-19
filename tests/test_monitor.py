@@ -7,6 +7,7 @@ from pathlib import Path
 
 from monitor import (
     BookingResult,
+    BookingCheckError,
     ConfigurationError,
     MonitorConfig,
     Showtime,
@@ -39,6 +40,7 @@ class MonitorTests(unittest.TestCase):
             theatre_name="PVR: Palazzo, The Nexus Vijaya Mall",
             date=date(2026, 7, 22),
             formats="IMAX",
+            bookmyshow_retry_delay_seconds=90,
         )
         self.available = BookingResult(
             available=True,
@@ -99,6 +101,7 @@ class MonitorTests(unittest.TestCase):
                     "theatre_name": self.config.theatre_name,
                     "date": "2026-07-22",
                     "formats": "IMAX",
+                    "bookmyshow_retry_delay_seconds": 90,
                 }
             ),
             encoding="utf-8",
@@ -113,6 +116,7 @@ class MonitorTests(unittest.TestCase):
                     "theatre_name": self.config.theatre_name,
                     "date": "2026-07-22",
                     "formats": "IMAX",
+                    "bookmyshow_retry_delay_seconds": 90,
                     "token": "must-not-be-here",
                 }
             ),
@@ -192,6 +196,7 @@ class MonitorTests(unittest.TestCase):
             theatre_name=self.config.theatre_name,
             date=self.config.date,
             formats="2D;IMAX",
+            bookmyshow_retry_delay_seconds=90,
         )
         filtered = filter_booking_result(config, self.available)
         self.assertEqual(
@@ -206,8 +211,34 @@ class MonitorTests(unittest.TestCase):
             theatre_name=self.config.theatre_name,
             date=self.config.date,
             formats="",
+            bookmyshow_retry_delay_seconds=90,
         )
         self.assertEqual(filter_booking_result(config, self.available), self.available)
+
+    def test_bookmyshow_errors_are_retried_once_before_failing_run(self) -> None:
+        calls = 0
+        sleeps: list[float] = []
+
+        def checker(_: MonitorConfig) -> BookingResult:
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                raise BookingCheckError("temporary BookMyShow failure")
+            return self.available
+
+        outcome = run_monitor(
+            self.config,
+            dry_run=True,
+            confirmation_delay=0,
+            ignore_state=False,
+            state_path=self.state_path,
+            checker=checker,
+            sleep=sleeps.append,
+        )
+
+        self.assertEqual(outcome.status, "available_dry_run")
+        self.assertEqual(calls, 3)
+        self.assertEqual(sleeps, [90])
 
 
 if __name__ == "__main__":

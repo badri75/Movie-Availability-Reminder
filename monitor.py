@@ -24,7 +24,16 @@ from notifier import (
 
 BMS_BASE_URL = "https://in.bookmyshow.com"
 
-CONFIG_KEYS = frozenset({"movie_name", "city", "theatre_name", "date", "formats"})
+CONFIG_KEYS = frozenset(
+    {
+        "movie_name",
+        "city",
+        "theatre_name",
+        "date",
+        "formats",
+        "bookmyshow_retry_delay_seconds",
+    }
+)
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
 DEFAULT_STATE_PATH = Path(__file__).with_name("state.json")
 INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30), name="IST")
@@ -45,6 +54,7 @@ class MonitorConfig:
     theatre_name: str
     date: date
     formats: str
+    bookmyshow_retry_delay_seconds: float
 
     @property
     def target_key(self) -> str:
@@ -130,6 +140,20 @@ def filter_booking_result(config: MonitorConfig, result: BookingResult) -> Booki
     )
 
 
+def check_bookmyshow_with_retry(
+    config: MonitorConfig,
+    checker: Callable[[MonitorConfig], BookingResult],
+    sleep: Callable[[float], None],
+) -> BookingResult:
+    try:
+        return checker(config)
+    except BookingCheckError:
+        delay = config.bookmyshow_retry_delay_seconds
+        if delay > 0:
+            sleep(delay)
+        return checker(config)
+
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -150,7 +174,8 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         if extra:
             details.append(f"unexpected: {', '.join(extra)}")
         raise ConfigurationError(
-            "config.json must contain exactly movie_name, city, theatre_name, date, and formats"
+            "config.json must contain exactly movie_name, city, theatre_name, date, "
+            "formats, and bookmyshow_retry_delay_seconds"
             + (f" ({'; '.join(details)})" if details else "")
             + "."
         )
@@ -160,6 +185,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
     theatre_name = payload.get("theatre_name")
     date_value = payload.get("date")
     formats = payload.get("formats")
+    retry_delay = payload.get("bookmyshow_retry_delay_seconds")
     if not all(
         isinstance(value, str) and value.strip()
         for value in (movie_name, city, theatre_name, date_value)
@@ -169,6 +195,10 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         )
     if not isinstance(formats, str):
         raise ConfigurationError("formats must be a string; use an empty string for all formats.")
+    if isinstance(retry_delay, bool) or not isinstance(retry_delay, (int, float)):
+        raise ConfigurationError("bookmyshow_retry_delay_seconds must be a number.")
+    if retry_delay < 0:
+        raise ConfigurationError("bookmyshow_retry_delay_seconds cannot be negative.")
 
     try:
         target_date = date.fromisoformat(date_value.strip())
@@ -181,6 +211,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         theatre_name=theatre_name.strip(),
         date=target_date,
         formats=formats.strip(),
+        bookmyshow_retry_delay_seconds=float(retry_delay),
     )
 
 
@@ -1230,13 +1261,19 @@ def run_monitor(
     if not ignore_state and already_notified(config, state_path):
         return RunOutcome(status="already_notified", available=True, notified=False)
 
-    first_result = filter_booking_result(config, checker(config))
+    first_result = filter_booking_result(
+        config,
+        check_bookmyshow_with_retry(config, checker, sleep),
+    )
     if not first_result.available:
         return RunOutcome(status="not_available", available=False, notified=False, result=first_result)
 
     if confirmation_delay > 0:
         sleep(confirmation_delay)
-    confirmed_result = filter_booking_result(config, checker(config))
+    confirmed_result = filter_booking_result(
+        config,
+        check_bookmyshow_with_retry(config, checker, sleep),
+    )
     if not confirmed_result.available:
         return RunOutcome(
             status="not_confirmed",
