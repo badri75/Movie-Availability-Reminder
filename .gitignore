@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+state.json
+test-results/
+playwright-report/
+.test-tmp/
+tests/.runtime/
