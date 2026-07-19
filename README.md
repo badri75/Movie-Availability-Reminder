@@ -18,16 +18,20 @@ It blocks images, media, and fonts to keep each check lightweight.
 
 ## Configuration
 
-`config.json` intentionally accepts exactly four fields:
+`config.json` intentionally accepts exactly five fields:
 
 ```json
 {
   "movie_name": "The Odyssey",
   "city": "Chennai",
   "theatre_name": "PVR: Palazzo, The Nexus Vijaya Mall",
-  "date": "2026-07-22"
+  "date": "2026-07-22",
+  "formats": "IMAX"
 }
 ```
+
+Use a semicolon-separated value such as `"2D;IMAX"` to include multiple
+formats. Use an empty string, `"formats": ""`, to return every format.
 
 Telegram credentials must never be added to that file.
 

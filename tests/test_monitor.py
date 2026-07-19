@@ -13,6 +13,7 @@ from monitor import (
     TicketClass,
     already_notified,
     build_notification_message,
+    filter_booking_result,
     load_config,
     run_monitor,
 )
@@ -37,6 +38,7 @@ class MonitorTests(unittest.TestCase):
             city="Chennai",
             theatre_name="PVR: Palazzo, The Nexus Vijaya Mall",
             date=date(2026, 7, 22),
+            formats="IMAX",
         )
         self.available = BookingResult(
             available=True,
@@ -66,6 +68,18 @@ class MonitorTests(unittest.TestCase):
                         ),
                     ),
                 ),
+                Showtime(
+                    time="09:00 PM",
+                    format="2D",
+                    availability="AVAILABLE",
+                    ticket_classes=(
+                        TicketClass(
+                            class_name="PRIME",
+                            price="190.00",
+                            availability="AVAILABLE",
+                        ),
+                    ),
+                ),
             ),
             booking_url="https://in.bookmyshow.com/example",
             event_id="ET00480917",
@@ -76,7 +90,7 @@ class MonitorTests(unittest.TestCase):
         self.state_path.unlink(missing_ok=True)
         self.state_path.with_suffix(self.state_path.suffix + ".tmp").unlink(missing_ok=True)
 
-    def test_config_requires_exact_four_fields(self) -> None:
+    def test_config_requires_exact_five_fields(self) -> None:
         self.config_path.write_text(
             json.dumps(
                 {
@@ -84,6 +98,7 @@ class MonitorTests(unittest.TestCase):
                     "city": "Chennai",
                     "theatre_name": self.config.theatre_name,
                     "date": "2026-07-22",
+                    "formats": "IMAX",
                 }
             ),
             encoding="utf-8",
@@ -97,6 +112,7 @@ class MonitorTests(unittest.TestCase):
                     "city": "Chennai",
                     "theatre_name": self.config.theatre_name,
                     "date": "2026-07-22",
+                    "formats": "IMAX",
                     "token": "must-not-be-here",
                 }
             ),
@@ -160,6 +176,38 @@ class MonitorTests(unittest.TestCase):
         self.assertIn("ELITE | 508.34 | FAST FILLING", message)
         self.assertNotIn("₹", message)
         self.assertIn(self.available.booking_url, message)
+
+    def test_filter_booking_result_keeps_requested_format_only(self) -> None:
+        filtered = filter_booking_result(self.config, self.available)
+        self.assertTrue(filtered.available)
+        self.assertEqual(
+            [showtime.format for showtime in filtered.showtimes],
+            ["IMAX", "IMAX"],
+        )
+
+    def test_semicolon_format_filter_keeps_multiple_formats(self) -> None:
+        config = MonitorConfig(
+            movie_name=self.config.movie_name,
+            city=self.config.city,
+            theatre_name=self.config.theatre_name,
+            date=self.config.date,
+            formats="2D;IMAX",
+        )
+        filtered = filter_booking_result(config, self.available)
+        self.assertEqual(
+            [showtime.format for showtime in filtered.showtimes],
+            ["IMAX", "IMAX", "2D"],
+        )
+
+    def test_empty_format_filter_keeps_everything(self) -> None:
+        config = MonitorConfig(
+            movie_name=self.config.movie_name,
+            city=self.config.city,
+            theatre_name=self.config.theatre_name,
+            date=self.config.date,
+            formats="",
+        )
+        self.assertEqual(filter_booking_result(config, self.available), self.available)
 
 
 if __name__ == "__main__":

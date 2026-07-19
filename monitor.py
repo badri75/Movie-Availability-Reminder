@@ -24,7 +24,7 @@ from notifier import (
 
 BMS_BASE_URL = "https://in.bookmyshow.com"
 
-CONFIG_KEYS = frozenset({"movie_name", "city", "theatre_name", "date"})
+CONFIG_KEYS = frozenset({"movie_name", "city", "theatre_name", "date", "formats"})
 DEFAULT_CONFIG_PATH = Path(__file__).with_name("config.json")
 DEFAULT_STATE_PATH = Path(__file__).with_name("state.json")
 INDIA_TIMEZONE = timezone(timedelta(hours=5, minutes=30), name="IST")
@@ -44,12 +44,14 @@ class MonitorConfig:
     city: str
     theatre_name: str
     date: date
+    formats: str
 
     @property
     def target_key(self) -> str:
         return (
             f"{normalize_text(self.movie_name)}|{normalize_text(self.city)}|"
-            f"{normalize_text(self.theatre_name)}|{self.date.isoformat()}"
+            f"{normalize_text(self.theatre_name)}|{self.date.isoformat()}|"
+            f"{normalize_text(self.formats)}"
         )
 
 
@@ -100,6 +102,34 @@ def slugify(value: str) -> str:
     return value
 
 
+def format_filters(value: str) -> tuple[str, ...]:
+    return tuple(part.strip() for part in value.split(";") if part.strip())
+
+
+def showtime_matches_formats(showtime: Showtime, filters: Sequence[str]) -> bool:
+    if not filters:
+        return True
+    normalized_format = normalize_text(showtime.format)
+    return any(normalize_text(filter_value) in normalized_format for filter_value in filters)
+
+
+def filter_booking_result(config: MonitorConfig, result: BookingResult) -> BookingResult:
+    filters = format_filters(config.formats)
+    if not filters or not result.available:
+        return result
+
+    showtimes = tuple(
+        showtime for showtime in result.showtimes if showtime_matches_formats(showtime, filters)
+    )
+    return BookingResult(
+        available=bool(showtimes),
+        theatre_name=result.theatre_name,
+        showtimes=showtimes,
+        booking_url=result.booking_url,
+        event_id=result.event_id,
+    )
+
+
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
@@ -120,7 +150,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         if extra:
             details.append(f"unexpected: {', '.join(extra)}")
         raise ConfigurationError(
-            "config.json must contain exactly movie_name, city, theatre_name, and date"
+            "config.json must contain exactly movie_name, city, theatre_name, date, and formats"
             + (f" ({'; '.join(details)})" if details else "")
             + "."
         )
@@ -129,11 +159,16 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
     city = payload.get("city")
     theatre_name = payload.get("theatre_name")
     date_value = payload.get("date")
+    formats = payload.get("formats")
     if not all(
         isinstance(value, str) and value.strip()
         for value in (movie_name, city, theatre_name, date_value)
     ):
-        raise ConfigurationError("All configuration values must be non-empty strings.")
+        raise ConfigurationError(
+            "movie_name, city, theatre_name, and date must be non-empty strings."
+        )
+    if not isinstance(formats, str):
+        raise ConfigurationError("formats must be a string; use an empty string for all formats.")
 
     try:
         target_date = date.fromisoformat(date_value.strip())
@@ -145,6 +180,7 @@ def load_config(path: Path = DEFAULT_CONFIG_PATH) -> MonitorConfig:
         city=city.strip(),
         theatre_name=theatre_name.strip(),
         date=target_date,
+        formats=formats.strip(),
     )
 
 
@@ -1194,13 +1230,13 @@ def run_monitor(
     if not ignore_state and already_notified(config, state_path):
         return RunOutcome(status="already_notified", available=True, notified=False)
 
-    first_result = checker(config)
+    first_result = filter_booking_result(config, checker(config))
     if not first_result.available:
         return RunOutcome(status="not_available", available=False, notified=False, result=first_result)
 
     if confirmation_delay > 0:
         sleep(confirmation_delay)
-    confirmed_result = checker(config)
+    confirmed_result = filter_booking_result(config, checker(config))
     if not confirmed_result.available:
         return RunOutcome(
             status="not_confirmed",
