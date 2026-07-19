@@ -39,7 +39,7 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python monitor.py --github-output "$GITHUB_OUTPUT"
+        run: python monitor.py --github-output "$GITHUB_OUTPUT" --soft-fail-bookmyshow-errors
 
       - name: Disable monitor after successful notification
         if: steps.monitor.outputs.notified == 'true'

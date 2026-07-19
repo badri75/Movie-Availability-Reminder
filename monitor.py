@@ -1334,6 +1334,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         help="Append available/notified/status outputs to this GitHub Actions output file.",
     )
+    parser.add_argument(
+        "--soft-fail-bookmyshow-errors",
+        action="store_true",
+        help="Print BookMyShow check errors as JSON and exit 0 after retries.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1381,6 +1386,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     except BookingCheckError as exc:
+        if args.soft_fail_bookmyshow_errors:
+            outcome = RunOutcome(status="bookmyshow_error", available=False, notified=False)
+            if args.github_output:
+                write_github_output(args.github_output, outcome)
+            print(
+                json.dumps(
+                    {
+                        "status": outcome.status,
+                        "available": outcome.available,
+                        "notified": outcome.notified,
+                        "error": str(exc),
+                    },
+                    indent=2,
+                )
+            )
+            return 0
         print(f"Booking check error: {exc}", file=sys.stderr)
         return 3
     except TelegramDeliveryError as exc:

@@ -5,6 +5,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
+import monitor
 from monitor import (
     BookingResult,
     BookingCheckError,
@@ -91,6 +92,7 @@ class MonitorTests(unittest.TestCase):
         self.config_path.unlink(missing_ok=True)
         self.state_path.unlink(missing_ok=True)
         self.state_path.with_suffix(self.state_path.suffix + ".tmp").unlink(missing_ok=True)
+        (self.runtime_dir / "github-output.txt").unlink(missing_ok=True)
 
     def test_config_requires_exact_five_fields(self) -> None:
         self.config_path.write_text(
@@ -239,6 +241,45 @@ class MonitorTests(unittest.TestCase):
         self.assertEqual(outcome.status, "available_dry_run")
         self.assertEqual(calls, 3)
         self.assertEqual(sleeps, [90])
+
+    def test_soft_fail_bookmyshow_errors_exits_successfully(self) -> None:
+        self.config_path.write_text(
+            json.dumps(
+                {
+                    "movie_name": "The Odyssey",
+                    "city": "Chennai",
+                    "theatre_name": self.config.theatre_name,
+                    "date": "2026-07-22",
+                    "formats": "IMAX",
+                    "bookmyshow_retry_delay_seconds": 0,
+                }
+            ),
+            encoding="utf-8",
+        )
+        github_output_path = self.runtime_dir / "github-output.txt"
+        original_checker = monitor.check_bookings
+
+        def checker(_: MonitorConfig) -> BookingResult:
+            raise BookingCheckError("blocked")
+
+        try:
+            monitor.check_bookings = checker
+            exit_code = monitor.main(
+                [
+                    "--config",
+                    str(self.config_path),
+                    "--state",
+                    str(self.state_path),
+                    "--github-output",
+                    str(github_output_path),
+                    "--soft-fail-bookmyshow-errors",
+                ]
+            )
+        finally:
+            monitor.check_bookings = original_checker
+
+        self.assertEqual(exit_code, 0)
+        self.assertIn("status=bookmyshow_error", github_output_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
