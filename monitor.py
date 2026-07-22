@@ -1028,7 +1028,7 @@ def _check_bookings_by_movie_variants(
     return BookingResult(available=False, theatre_name=config.theatre_name)
 
 
-def check_bookings(
+def _check_bookings_with_playwright(
     config: MonitorConfig,
     *,
     headless: bool = True,
@@ -1194,6 +1194,68 @@ def check_bookings(
         raise BookingCheckError(
             f"Browser check failed: {type(exc).__name__}: {first_line[:300]}"
         ) from None
+
+
+def _check_bookings_with_scrapingant(
+    config: MonitorConfig,
+    *,
+    timeout_ms: int = 20_000,
+) -> BookingResult:
+    try:
+        from poller import ScrapingAntError, poll_bookmyshow
+    except ImportError as exc:
+        raise BookingCheckError(f"ScrapingAnt poller could not be loaded: {exc}.") from None
+
+    try:
+        scraped = poll_bookmyshow(
+            config.movie_name,
+            config.city,
+            config.theatre_name,
+            config.date,
+            timeout_seconds=max(90.0, timeout_ms / 1000),
+        )
+    except ScrapingAntError as exc:
+        raise BookingCheckError(f"ScrapingAnt check failed: {exc}") from None
+
+    showtimes = tuple(
+        Showtime(
+            time=value.time,
+            format=value.format,
+            availability=value.availability,
+            ticket_classes=tuple(
+                TicketClass(
+                    class_name=ticket_class.class_name,
+                    price=ticket_class.price,
+                    availability=ticket_class.availability,
+                )
+                for ticket_class in value.ticket_classes
+            ),
+        )
+        for value in scraped.showtimes
+    )
+    return BookingResult(
+        available=bool(showtimes),
+        theatre_name=scraped.theatre_name,
+        showtimes=showtimes,
+        booking_url=scraped.booking_url,
+        event_id=",".join(scraped.event_ids),
+    )
+
+
+def check_bookings(
+    config: MonitorConfig,
+    *,
+    headless: bool = True,
+    timeout_ms: int = 20_000,
+) -> BookingResult:
+    """Use ScrapingAnt when configured; otherwise use the local Playwright browser."""
+    if os.environ.get("SCRAPINGANT_API_KEY", "").strip():
+        return _check_bookings_with_scrapingant(config, timeout_ms=timeout_ms)
+    return _check_bookings_with_playwright(
+        config,
+        headless=headless,
+        timeout_ms=timeout_ms,
+    )
 
 
 def build_notification_message(config: MonitorConfig, result: BookingResult) -> str:

@@ -13,8 +13,11 @@ that theatre's schedule for the configured date. It then finds the exact movie
 name within the schedule, so standard, IMAX, and other available formats are
 recognized without needing their separate movie IDs.
 
-The monitor does not sign in, choose seats, bypass CAPTCHAs, or purchase tickets.
-It blocks images, media, and fonts to keep each check lightweight.
+When `SCRAPINGANT_API_KEY` is set, the monitor uses `poller.py` to retrieve the
+cinema catalogue and dated schedule through ScrapingAnt. It defaults to an Indian
+datacenter proxy with browser rendering disabled, which costs one credit per page.
+Without that variable, it falls back to the local Playwright browser. The monitor
+does not sign in, choose seats, or purchase tickets.
 
 ## Configuration
 
@@ -38,6 +41,27 @@ If a BookMyShow check fails with a site/browser error, the monitor waits
 `bookmyshow_retry_delay_seconds` and starts that check again once.
 
 Telegram credentials must never be added to that file.
+
+The ScrapingAnt key must also remain outside `config.json`. Load it into the
+current PowerShell session when testing the ScrapingAnt path:
+
+```powershell
+$secureScrapingAntKey = Read-Host "Enter the ScrapingAnt API key" -AsSecureString
+$scrapingAntKeyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureScrapingAntKey)
+try {
+    $env:SCRAPINGANT_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($scrapingAntKeyPointer)
+}
+finally {
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($scrapingAntKeyPointer)
+}
+```
+
+The defaults are `SCRAPINGANT_PROXY_COUNTRY=IN`,
+`SCRAPINGANT_PROXY_TYPE=datacenter`, and `SCRAPINGANT_BROWSER=false`. If
+BookMyShow does not return usable HTML, browser rendering can be tested with
+`$env:SCRAPINGANT_BROWSER = "true"`, or a residential proxy with
+`$env:SCRAPINGANT_PROXY_TYPE = "residential"`. Both alternatives consume more
+credits and may exceed the free allowance at a ten-minute schedule.
 
 ## Local setup (Windows PowerShell)
 
@@ -99,6 +123,10 @@ After testing, clear the session credentials:
 ```powershell
 Remove-Item Env:TELEGRAM_BOT_TOKEN
 Remove-Item Env:TELEGRAM_CHAT_ID
+Remove-Item Env:SCRAPINGANT_API_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:SCRAPINGANT_BROWSER -ErrorAction SilentlyContinue
+Remove-Item Env:SCRAPINGANT_PROXY_TYPE -ErrorAction SilentlyContinue
+Remove-Item Env:SCRAPINGANT_PROXY_COUNTRY -ErrorAction SilentlyContinue
 Remove-Item Env:BMS_BROWSER_CHANNEL -ErrorAction SilentlyContinue
 ```
 
@@ -121,6 +149,13 @@ variables → Actions** as:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
+- `SCRAPINGANT_API_KEY`
+
+The workflow automatically uses `poller.py` when the `SCRAPINGANT_API_KEY` secret
+is present. It uses Playwright only when that secret is absent. Optional GitHub
+Actions repository variables are `SCRAPINGANT_BROWSER`,
+`SCRAPINGANT_PROXY_TYPE`, and `SCRAPINGANT_PROXY_COUNTRY`; leave them unset to
+use the free-tier-friendly defaults.
 
 After Telegram delivery succeeds, the workflow disables itself to prevent repeat
 alerts. Scheduled GitHub Actions can be delayed, so a ten-minute schedule is not a
