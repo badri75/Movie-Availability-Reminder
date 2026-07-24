@@ -1,4 +1,4 @@
-"""Fetch and extract BookMyShow schedules through ScrapingAnt."""
+"""Fetch and extract BookMyShow schedules through ScraperAPI."""
 
 from __future__ import annotations
 
@@ -14,12 +14,12 @@ from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
-SCRAPINGANT_ENDPOINT = "https://api.scrapingant.com/v2/general"
+SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com"
 INITIAL_STATE_MARKER = "window.__INITIAL_STATE__ = "
 
 
-class ScrapingAntError(RuntimeError):
-    """Raised when ScrapingAnt or the returned BookMyShow page cannot be used."""
+class ScraperAPIError(RuntimeError):
+    """Raised when ScraperAPI or the returned BookMyShow page cannot be used."""
 
 
 @dataclass(frozen=True)
@@ -57,48 +57,31 @@ def _enabled(name: str, default: bool = False) -> bool:
     return value.strip().casefold() in {"1", "true", "yes", "on"}
 
 
-class ScrapingAntClient:
-    """Small ScrapingAnt client configured for low-credit BookMyShow checks."""
+class ScraperAPIClient:
+    """Small ScraperAPI client configured for low-credit BookMyShow checks."""
 
     def __init__(self, api_key: str, *, timeout_seconds: float = 90.0) -> None:
         if not api_key.strip():
-            raise ScrapingAntError("SCRAPINGANT_API_KEY is empty.")
+            raise ScraperAPIError("SCRAPERAPI_API_KEY is empty.")
         self.api_key = api_key.strip()
         self.timeout_seconds = timeout_seconds
 
     @classmethod
-    def from_environment(cls, *, timeout_seconds: float = 90.0) -> "ScrapingAntClient":
-        api_key = os.environ.get("SCRAPINGANT_API_KEY", "").strip()
+    def from_environment(cls, *, timeout_seconds: float = 90.0) -> "ScraperAPIClient":
+        api_key = os.environ.get("SCRAPERAPI_API_KEY", "").strip()
         if not api_key:
-            raise ScrapingAntError(
-                "SCRAPINGANT_API_KEY is not set. Add it as an environment variable or GitHub secret."
+            raise ScraperAPIError(
+                "SCRAPERAPI_API_KEY is not set. Add it as an environment variable or GitHub secret."
             )
         return cls(api_key, timeout_seconds=timeout_seconds)
 
     def fetch(self, target_url: str) -> str:
-        proxy_type = (
-            os.environ.get("SCRAPINGANT_PROXY_TYPE", "datacenter").strip().casefold()
-            or "datacenter"
-        )
-        if proxy_type not in {"datacenter", "residential"}:
-            raise ScrapingAntError(
-                "SCRAPINGANT_PROXY_TYPE must be either 'datacenter' or 'residential'."
-            )
-        proxy_country = (
-            os.environ.get("SCRAPINGANT_PROXY_COUNTRY", "IN").strip().upper() or "IN"
-        )
-        if not re.fullmatch(r"[A-Z]{2}", proxy_country):
-            raise ScrapingAntError(
-                "SCRAPINGANT_PROXY_COUNTRY must be a two-letter country code."
-            )
-
-        request_url = f"{SCRAPINGANT_ENDPOINT}?{urlencode({
-            'x-api-key': self.api_key,
+        parameters = {
+            'api_key': self.api_key,
+            'render': 'true' if _enabled('SCRAPERAPI_RENDER') else 'false',
             'url': target_url,
-            'browser': 'true' if _enabled('SCRAPINGANT_BROWSER') else 'false',
-            'proxy_type': proxy_type,
-            'proxy_country': proxy_country,
-        })}"
+        }
+        request_url = f"{SCRAPERAPI_ENDPOINT}?{urlencode(parameters)}"
         headers = {
             "Accept": "text/html,application/xhtml+xml",
             "User-Agent": "BMS-Booking-Monitor/1.0",
@@ -111,18 +94,18 @@ class ScrapingAntClient:
                 body = response.read()
                 charset = response.headers.get_content_charset() or "utf-8"
         except HTTPError as exc:
-            raise ScrapingAntError(f"ScrapingAnt returned HTTP {exc.code}.") from None
+            raise ScraperAPIError(f"ScraperAPI returned HTTP {exc.code}.") from None
         except (URLError, TimeoutError, OSError) as exc:
             detail = str(exc.reason if isinstance(exc, URLError) else exc).strip()
-            raise ScrapingAntError(
-                f"ScrapingAnt could not be reached: {detail or type(exc).__name__}."
+            raise ScraperAPIError(
+                f"ScraperAPI could not be reached: {detail or type(exc).__name__}."
             ) from None
 
         if status != 200:
-            raise ScrapingAntError(f"ScrapingAnt returned HTTP {status}.")
+            raise ScraperAPIError(f"ScraperAPI returned HTTP {status}.")
         text = body.decode(charset, errors="replace")
         if not text.strip():
-            raise ScrapingAntError("ScrapingAnt returned an empty BookMyShow response.")
+            raise ScraperAPIError("ScraperAPI returned an empty BookMyShow response.")
         return text
 
 
@@ -142,7 +125,7 @@ def extract_initial_state(html: str) -> Any:
             return state
         except json.JSONDecodeError:
             search_from = object_index + 1
-    raise ScrapingAntError("BookMyShow initial-state data was not present in the returned page.")
+    raise ScraperAPIError("BookMyShow initial-state data was not present in the returned page.")
 
 
 def _walk(value: Any) -> Iterator[dict[str, Any]]:
@@ -166,7 +149,7 @@ def discover_scheduled_theatre(
         urlparse(theatre_url).path,
     )
     if not match:
-        raise ScrapingAntError("The configured theatre URL has no venue code.")
+        raise ScraperAPIError("The configured theatre URL has no venue code.")
     target_code = match.group(1).casefold()
 
     for value in _walk(state):
@@ -186,7 +169,7 @@ def discover_scheduled_theatre(
         if theatre_name:
             return theatre_name
 
-    raise ScrapingAntError(
+    raise ScraperAPIError(
         "BookMyShow did not provide the theatre name for the configured URL."
     )
 
@@ -295,8 +278,8 @@ def poll_bookmyshow(
     *,
     timeout_seconds: float = 90.0,
 ) -> ScrapedBooking:
-    """Extract a movie from one configured, dated theatre page via ScrapingAnt."""
-    client = ScrapingAntClient.from_environment(timeout_seconds=timeout_seconds)
+    """Extract a movie from one configured, dated theatre page via ScraperAPI."""
+    client = ScraperAPIClient.from_environment(timeout_seconds=timeout_seconds)
     schedule_html = client.fetch(theatre_url)
     schedule_state = extract_initial_state(schedule_html)
     theatre_name = discover_scheduled_theatre(schedule_state, theatre_url, schedule_html)

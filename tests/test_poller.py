@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlparse
 from unittest.mock import patch
 
 from poller import (
-    ScrapingAntClient,
-    ScrapingAntError,
+    ScraperAPIClient,
+    ScraperAPIError,
     extract_initial_state,
     extract_movie_schedule,
     poll_bookmyshow,
@@ -16,7 +16,7 @@ from poller import (
 
 
 class PollerTests(unittest.TestCase):
-    def test_scrapingant_client_uses_free_tier_friendly_defaults(self) -> None:
+    def test_scraperapi_client_uses_free_tier_defaults(self) -> None:
         captured_urls: list[str] = []
 
         class FakeHeaders:
@@ -47,18 +47,36 @@ class PollerTests(unittest.TestCase):
             captured_urls.append(request.full_url)
             return FakeResponse()
 
-        with patch.dict(os.environ, {"SCRAPINGANT_API_KEY": "test-key"}, clear=True):
+        with patch.dict(os.environ, {"SCRAPERAPI_API_KEY": "test-key"}, clear=True):
             with patch("poller.urlopen", side_effect=fake_urlopen):
-                result = ScrapingAntClient.from_environment().fetch(
+                result = ScraperAPIClient.from_environment().fetch(
                     "https://in.bookmyshow.com/chennai/cinemas"
                 )
 
         self.assertEqual(result, "<html>BookMyShow</html>")
         query = parse_qs(urlparse(captured_urls[0]).query)
-        self.assertEqual(query["x-api-key"], ["test-key"])
-        self.assertEqual(query["browser"], ["false"])
-        self.assertEqual(query["proxy_type"], ["datacenter"])
-        self.assertEqual(query["proxy_country"], ["IN"])
+        self.assertEqual(query["api_key"], ["test-key"])
+        self.assertEqual(query["render"], ["false"])
+        self.assertNotIn("premium", query)
+        self.assertNotIn("country_code", query)
+
+        with patch.dict(
+            os.environ,
+            {
+                "SCRAPERAPI_API_KEY": "test-key",
+                "SCRAPERAPI_RENDER": "true",
+            },
+            clear=True,
+        ):
+            with patch("poller.urlopen", side_effect=fake_urlopen):
+                ScraperAPIClient.from_environment().fetch(
+                    "https://in.bookmyshow.com/chennai/cinemas"
+                )
+
+        enabled_query = parse_qs(urlparse(captured_urls[1]).query)
+        self.assertEqual(enabled_query["render"], ["true"])
+        self.assertNotIn("premium", enabled_query)
+        self.assertNotIn("country_code", enabled_query)
 
     def test_extracts_theatre_movie_showtime_and_original_status_text(self) -> None:
         state = {
@@ -112,7 +130,7 @@ class PollerTests(unittest.TestCase):
         self.assertEqual(result.showtimes[0].ticket_classes[0].price, "508.34")
 
     def test_missing_initial_state_is_an_error(self) -> None:
-        with self.assertRaises(ScrapingAntError):
+        with self.assertRaises(ScraperAPIError):
             extract_initial_state("<html><body>No schedule</body></html>")
 
     def test_poller_fetches_only_the_configured_theatre_url(self) -> None:
@@ -150,7 +168,7 @@ class PollerTests(unittest.TestCase):
 
         client = FakeClient()
         with patch(
-            "poller.ScrapingAntClient.from_environment",
+            "poller.ScraperAPIClient.from_environment",
             return_value=client,
         ):
             result = poll_bookmyshow(

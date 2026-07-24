@@ -493,15 +493,15 @@ def _check_bookings_with_playwright(
         ) from None
 
 
-def _check_bookings_with_scrapingant(
+def _check_bookings_with_scraperapi(
     config: MonitorConfig,
     *,
     timeout_ms: int = 20_000,
 ) -> BookingResult:
     try:
-        from poller import ScrapingAntError, poll_bookmyshow
+        from poller import ScraperAPIError, poll_bookmyshow
     except ImportError as exc:
-        raise BookingCheckError(f"ScrapingAnt poller could not be loaded: {exc}.") from None
+        raise BookingCheckError(f"ScraperAPI poller could not be loaded: {exc}.") from None
 
     try:
         scraped = poll_bookmyshow(
@@ -509,8 +509,8 @@ def _check_bookings_with_scrapingant(
             config.theatre_url,
             timeout_seconds=max(90.0, timeout_ms / 1000),
         )
-    except ScrapingAntError as exc:
-        raise BookingCheckError(f"ScrapingAnt check failed: {exc}") from None
+    except ScraperAPIError as exc:
+        raise BookingCheckError(f"ScraperAPI check failed: {exc}") from None
 
     showtimes = tuple(
         Showtime(
@@ -543,9 +543,9 @@ def check_bookings(
     headless: bool = True,
     timeout_ms: int = 20_000,
 ) -> BookingResult:
-    """Use ScrapingAnt when configured; otherwise use the local Playwright browser."""
-    if os.environ.get("SCRAPINGANT_API_KEY", "").strip():
-        return _check_bookings_with_scrapingant(config, timeout_ms=timeout_ms)
+    """Use ScraperAPI when configured; otherwise use the local Playwright browser."""
+    if os.environ.get("SCRAPERAPI_API_KEY", "").strip():
+        return _check_bookings_with_scraperapi(config, timeout_ms=timeout_ms)
     return _check_bookings_with_playwright(
         config,
         headless=headless,

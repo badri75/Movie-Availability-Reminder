@@ -39,10 +39,8 @@ jobs:
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          SCRAPINGANT_API_KEY: ${{ secrets.SCRAPINGANT_API_KEY }}
-          SCRAPINGANT_BROWSER: ${{ vars.SCRAPINGANT_BROWSER }}
-          SCRAPINGANT_PROXY_TYPE: ${{ vars.SCRAPINGANT_PROXY_TYPE }}
-          SCRAPINGANT_PROXY_COUNTRY: ${{ vars.SCRAPINGANT_PROXY_COUNTRY }}
+          SCRAPERAPI_API_KEY: ${{ secrets.SCRAPERAPI_API_KEY }}
+          SCRAPERAPI_RENDER: ${{ vars.SCRAPERAPI_RENDER }}
         run: python monitor.py --github-output "$GITHUB_OUTPUT" --soft-fail-bookmyshow-errors
 
       - name: Disable monitor after successful notification

@@ -13,10 +13,10 @@ direct, dated theatre booking URL from `config.json` and finds the exact movie
 name within that one schedule page. Standard, IMAX, and other available formats
 are recognized without needing their separate movie IDs.
 
-When `SCRAPINGANT_API_KEY` is set, the monitor uses `poller.py` to retrieve only
-the configured theatre schedule through ScrapingAnt. It defaults to an Indian
-datacenter proxy with browser rendering disabled, so each normal check makes one
-ScrapingAnt page request instead of two.
+When `SCRAPERAPI_API_KEY` is set, the monitor uses `poller.py` to retrieve the
+configured theatre schedule through ScraperAPI. It uses a standard, non-premium
+request with no paid country-level geotargeting and browser rendering disabled,
+so each normal check makes one ScraperAPI page request instead of two.
 Without that variable, it falls back to the local Playwright browser. The monitor
 does not sign in, choose seats, or purchase tickets.
 
@@ -47,26 +47,25 @@ If a BookMyShow check fails with a site/browser error, the monitor waits
 
 Telegram credentials must never be added to that file.
 
-The ScrapingAnt key must also remain outside `config.json`. Load it into the
-current PowerShell session when testing the ScrapingAnt path:
+The ScraperAPI key must also remain outside `config.json`. Load it into the
+current PowerShell session when testing the ScraperAPI path:
 
 ```powershell
-$secureScrapingAntKey = Read-Host "Enter the ScrapingAnt API key" -AsSecureString
-$scrapingAntKeyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureScrapingAntKey)
+$secureScraperApiKey = Read-Host "Enter the ScraperAPI key" -AsSecureString
+$scraperApiKeyPointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secureScraperApiKey)
 try {
-    $env:SCRAPINGANT_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($scrapingAntKeyPointer)
+    $env:SCRAPERAPI_API_KEY = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($scraperApiKeyPointer)
 }
 finally {
-    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($scrapingAntKeyPointer)
+    [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($scraperApiKeyPointer)
 }
 ```
 
-The defaults are `SCRAPINGANT_PROXY_COUNTRY=IN`,
-`SCRAPINGANT_PROXY_TYPE=datacenter`, and `SCRAPINGANT_BROWSER=false`. If
-BookMyShow does not return usable HTML, browser rendering can be tested with
-`$env:SCRAPINGANT_BROWSER = "true"`, or a residential proxy with
-`$env:SCRAPINGANT_PROXY_TYPE = "residential"`. Both alternatives consume more
-credits and may exceed the free allowance at a ten-minute schedule.
+The only optional request setting is `SCRAPERAPI_RENDER`, which defaults to
+`false`. If BookMyShow does not return usable HTML, browser rendering can be
+tested with `$env:SCRAPERAPI_RENDER = "true"`, but it consumes more credits.
+The monitor intentionally does not send `premium` or `country_code`, keeping the
+default request compatible with ScraperAPI's free tier.
 
 ## Local setup (Windows PowerShell)
 
@@ -128,10 +127,8 @@ After testing, clear the session credentials:
 ```powershell
 Remove-Item Env:TELEGRAM_BOT_TOKEN
 Remove-Item Env:TELEGRAM_CHAT_ID
-Remove-Item Env:SCRAPINGANT_API_KEY -ErrorAction SilentlyContinue
-Remove-Item Env:SCRAPINGANT_BROWSER -ErrorAction SilentlyContinue
-Remove-Item Env:SCRAPINGANT_PROXY_TYPE -ErrorAction SilentlyContinue
-Remove-Item Env:SCRAPINGANT_PROXY_COUNTRY -ErrorAction SilentlyContinue
+Remove-Item Env:SCRAPERAPI_API_KEY -ErrorAction SilentlyContinue
+Remove-Item Env:SCRAPERAPI_RENDER -ErrorAction SilentlyContinue
 Remove-Item Env:BMS_BROWSER_CHANNEL -ErrorAction SilentlyContinue
 ```
 
@@ -154,13 +151,12 @@ variables → Actions** as:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
-- `SCRAPINGANT_API_KEY`
+- `SCRAPERAPI_API_KEY`
 
-The workflow automatically uses `poller.py` when the `SCRAPINGANT_API_KEY` secret
-is present. It uses Playwright only when that secret is absent. Optional GitHub
-Actions repository variables are `SCRAPINGANT_BROWSER`,
-`SCRAPINGANT_PROXY_TYPE`, and `SCRAPINGANT_PROXY_COUNTRY`; leave them unset to
-use the free-tier-friendly defaults.
+The workflow automatically uses `poller.py` when the `SCRAPERAPI_API_KEY` secret
+is present. It uses Playwright only when that secret is absent. The only optional
+GitHub Actions repository variable is `SCRAPERAPI_RENDER`; leave it unset to use
+the free-tier-oriented default.
 
 After Telegram delivery succeeds, the workflow disables itself to prevent repeat
 alerts. Scheduled GitHub Actions can be delayed, so a ten-minute schedule is not a
