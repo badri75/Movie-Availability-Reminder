@@ -1,8 +1,6 @@
 {
-  "movie_name": "The Odyssey",
-  "city": "Chennai",
-  "theatre_name": "PVR: Palazzo, The Nexus Vijaya Mall",
-  "date": "2026-07-22",
-  "formats": "IMAX",
+  "movie_name": "Jana Nayagan",
+  "theatre_url": "https://in.bookmyshow.com/cinemas/CHEN/pvr-vr-chennai-anna-nagar/buytickets/PCAN/20260725",
+  "formats": "",
   "bookmyshow_retry_delay_seconds": 75
 }

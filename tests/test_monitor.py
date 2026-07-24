@@ -35,17 +35,19 @@ class MonitorTests(unittest.TestCase):
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
         self.config_path = self.runtime_dir / "config.test.json"
         self.state_path = self.runtime_dir / "state.test.json"
+        self.theatre_name = "INOX: LUXE Phoenix Market City, Velachery"
         self.config = MonitorConfig(
             movie_name="The Odyssey",
-            city="Chennai",
-            theatre_name="PVR: Palazzo, The Nexus Vijaya Mall",
-            date=date(2026, 7, 22),
+            theatre_url=(
+                "https://in.bookmyshow.com/cinemas/CHEN/"
+                "inox-luxe-phoenix-market-city-velachery/buytickets/INPR/20260722"
+            ),
             formats="IMAX",
             bookmyshow_retry_delay_seconds=90,
         )
         self.available = BookingResult(
             available=True,
-            theatre_name=self.config.theatre_name,
+            theatre_name=self.theatre_name,
             showtimes=(
                 Showtime(
                     time="10:30 AM",
@@ -94,14 +96,12 @@ class MonitorTests(unittest.TestCase):
         self.state_path.with_suffix(self.state_path.suffix + ".tmp").unlink(missing_ok=True)
         (self.runtime_dir / "github-output.txt").unlink(missing_ok=True)
 
-    def test_config_requires_exact_five_fields(self) -> None:
+    def test_config_requires_exact_fields(self) -> None:
         self.config_path.write_text(
             json.dumps(
                 {
                     "movie_name": "The Odyssey",
-                    "city": "Chennai",
-                    "theatre_name": self.config.theatre_name,
-                    "date": "2026-07-22",
+                    "theatre_url": self.config.theatre_url,
                     "formats": "IMAX",
                     "bookmyshow_retry_delay_seconds": 90,
                 }
@@ -109,14 +109,13 @@ class MonitorTests(unittest.TestCase):
             encoding="utf-8",
         )
         self.assertEqual(load_config(self.config_path), self.config)
+        self.assertEqual(self.config.date, date(2026, 7, 22))
 
         self.config_path.write_text(
             json.dumps(
                 {
                     "movie_name": "The Odyssey",
-                    "city": "Chennai",
-                    "theatre_name": self.config.theatre_name,
-                    "date": "2026-07-22",
+                    "theatre_url": self.config.theatre_url,
                     "formats": "IMAX",
                     "bookmyshow_retry_delay_seconds": 90,
                     "token": "must-not-be-here",
@@ -125,6 +124,22 @@ class MonitorTests(unittest.TestCase):
             encoding="utf-8",
         )
         with self.assertRaises(ConfigurationError):
+            load_config(self.config_path)
+
+    def test_config_rejects_theatre_url_with_invalid_date(self) -> None:
+        self.config_path.write_text(
+            json.dumps(
+                {
+                    "movie_name": self.config.movie_name,
+                    "theatre_url": self.config.theatre_url.replace("20260722", "20260231"),
+                    "formats": "IMAX",
+                    "bookmyshow_retry_delay_seconds": 90,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(ConfigurationError, "invalid date"):
             load_config(self.config_path)
 
     def test_positive_result_must_be_confirmed_before_notification(self) -> None:
@@ -144,7 +159,7 @@ class MonitorTests(unittest.TestCase):
         self.assertTrue(already_notified(self.config, self.state_path))
 
     def test_failed_confirmation_does_not_notify(self) -> None:
-        unavailable = BookingResult(available=False, theatre_name=self.config.theatre_name)
+        unavailable = BookingResult(available=False, theatre_name=self.theatre_name)
         results = iter([self.available, unavailable])
         notifier = FakeNotifier()
         outcome = run_monitor(
@@ -176,9 +191,11 @@ class MonitorTests(unittest.TestCase):
     def test_notification_contains_target_and_booking_link(self) -> None:
         message = build_notification_message(self.config, self.available)
         self.assertIn("The Odyssey bookings are open", message)
-        self.assertIn(self.config.theatre_name, message)
+        self.assertIn(self.theatre_name, message)
+        self.assertNotIn("City:", message)
         self.assertIn("Wednesday, 22 July 2026", message)
         self.assertIn("10:30 AM (IMAX) - AVAILABLE", message)
+        self.assertIn("07:30 PM (IMAX) - FAST FILLING", message)
         self.assertIn("ELITE | 508.34 | FAST FILLING", message)
         self.assertNotIn("₹", message)
         self.assertIn(self.available.booking_url, message)
@@ -194,9 +211,7 @@ class MonitorTests(unittest.TestCase):
     def test_semicolon_format_filter_keeps_multiple_formats(self) -> None:
         config = MonitorConfig(
             movie_name=self.config.movie_name,
-            city=self.config.city,
-            theatre_name=self.config.theatre_name,
-            date=self.config.date,
+            theatre_url=self.config.theatre_url,
             formats="2D;IMAX",
             bookmyshow_retry_delay_seconds=90,
         )
@@ -209,9 +224,7 @@ class MonitorTests(unittest.TestCase):
     def test_empty_format_filter_keeps_everything(self) -> None:
         config = MonitorConfig(
             movie_name=self.config.movie_name,
-            city=self.config.city,
-            theatre_name=self.config.theatre_name,
-            date=self.config.date,
+            theatre_url=self.config.theatre_url,
             formats="",
             bookmyshow_retry_delay_seconds=90,
         )
@@ -247,9 +260,7 @@ class MonitorTests(unittest.TestCase):
             json.dumps(
                 {
                     "movie_name": "The Odyssey",
-                    "city": "Chennai",
-                    "theatre_name": self.config.theatre_name,
-                    "date": "2026-07-22",
+                    "theatre_url": self.config.theatre_url,
                     "formats": "IMAX",
                     "bookmyshow_retry_delay_seconds": 0,
                 }

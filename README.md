@@ -1,38 +1,43 @@
 # BookMyShow booking monitor
 
-This project checks BookMyShow for the movie, theatre, and date in `config.json`.
+This project checks BookMyShow for the configured movie at the theatre and date
+encoded in `theatre_url`.
 A positive result is checked twice, 30 seconds apart, before one Telegram
 notification is sent. The notification includes each showtime's format,
 availability, ticket class, and current price when BookMyShow supplies them.
 Availability wording is preserved from BookMyShow, and prices are displayed
 without a currency symbol.
 
-No movie event/listing ID is configured or hard-coded. On every check, the
-monitor finds the exact theatre in BookMyShow's city cinema catalogue and opens
-that theatre's schedule for the configured date. It then finds the exact movie
-name within the schedule, so standard, IMAX, and other available formats are
-recognized without needing their separate movie IDs.
+No movie event/listing ID is configured or hard-coded. The monitor opens the
+direct, dated theatre booking URL from `config.json` and finds the exact movie
+name within that one schedule page. Standard, IMAX, and other available formats
+are recognized without needing their separate movie IDs.
 
-When `SCRAPINGANT_API_KEY` is set, the monitor uses `poller.py` to retrieve the
-cinema catalogue and dated schedule through ScrapingAnt. It defaults to an Indian
-datacenter proxy with browser rendering disabled, which costs one credit per page.
+When `SCRAPINGANT_API_KEY` is set, the monitor uses `poller.py` to retrieve only
+the configured theatre schedule through ScrapingAnt. It defaults to an Indian
+datacenter proxy with browser rendering disabled, so each normal check makes one
+ScrapingAnt page request instead of two.
 Without that variable, it falls back to the local Playwright browser. The monitor
 does not sign in, choose seats, or purchase tickets.
 
 ## Configuration
 
-`config.json` intentionally accepts exactly six fields:
+`config.json` intentionally accepts exactly four fields:
 
 ```json
 {
   "movie_name": "The Odyssey",
-  "city": "Chennai",
-  "theatre_name": "PVR: Palazzo, The Nexus Vijaya Mall",
-  "date": "2026-07-22",
+  "theatre_url": "https://in.bookmyshow.com/cinemas/CHEN/inox-luxe-phoenix-market-city-velachery/buytickets/INPR/20260722",
   "formats": "IMAX",
   "bookmyshow_retry_delay_seconds": 90
 }
 ```
+
+`theatre_url` must be a direct HTTPS BookMyShow theatre booking URL. The monitor
+derives the venue code and date from this URL and reads the theatre name from the
+returned schedule page. A positive result is still checked again after the
+confirmation delay before Telegram is notified, so a confirmed positive run
+intentionally performs a second one-page check.
 
 Use a semicolon-separated value such as `"2D;IMAX"` to include multiple
 formats. Use an empty string, `"formats": ""`, to return every format.

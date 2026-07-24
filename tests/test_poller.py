@@ -9,9 +9,9 @@ from unittest.mock import patch
 from poller import (
     ScrapingAntClient,
     ScrapingAntError,
-    discover_theatre,
     extract_initial_state,
     extract_movie_schedule,
+    poll_bookmyshow,
 )
 
 
@@ -67,6 +67,8 @@ class PollerTests(unittest.TestCase):
                 "VenueCode": "PVPL",
             },
             "schedule": {
+                "VenueName": "INOX: LUXE Phoenix Market City, Velachery",
+                "VenueCode": "INPR",
                 "EventTitle": "The Odyssey",
                 "ChildEvents": [
                     {
@@ -96,18 +98,15 @@ class PollerTests(unittest.TestCase):
         )
 
         parsed = extract_initial_state(html)
-        theatre_name, venue_code = discover_theatre(
-            parsed, "PVR: Palazzo, The Nexus Vijaya Mall"
-        )
         result = extract_movie_schedule(
             parsed,
             "The Odyssey",
-            theatre_name,
+            "PVR: Palazzo, The Nexus Vijaya Mall",
             "https://in.bookmyshow.com/example",
         )
 
-        self.assertEqual(venue_code, "PVPL")
         self.assertEqual(result.event_ids, ("ET00480917",))
+        self.assertEqual(result.showtimes[0].format, "IMAX")
         self.assertEqual(result.showtimes[0].availability, "Fast Filling")
         self.assertEqual(result.showtimes[0].ticket_classes[0].availability, "Almost full")
         self.assertEqual(result.showtimes[0].ticket_classes[0].price, "508.34")
@@ -115,6 +114,55 @@ class PollerTests(unittest.TestCase):
     def test_missing_initial_state_is_an_error(self) -> None:
         with self.assertRaises(ScrapingAntError):
             extract_initial_state("<html><body>No schedule</body></html>")
+
+    def test_poller_fetches_only_the_configured_theatre_url(self) -> None:
+        theatre_url = (
+            "https://in.bookmyshow.com/cinemas/CHEN/"
+            "inox-luxe-phoenix-market-city-velachery/buytickets/INPR/20260722"
+        )
+        state = {
+            "schedule": {
+                "VenueName": "INOX: LUXE Phoenix Market City, Velachery",
+                "VenueCode": "INPR",
+                "EventTitle": "The Odyssey",
+                "ChildEvents": [
+                    {
+                        "EventCode": "ET00480917",
+                        "EventDimension": "IMAX 2D",
+                        "ShowTimes": [{"ShowTime": "09:10 AM", "AvailStatus": "1"}],
+                    }
+                ],
+            }
+        }
+        html = (
+            "<html><script>window.__INITIAL_STATE__ = "
+            + json.dumps(state)
+            + ";</script></html>"
+        )
+
+        class FakeClient:
+            def __init__(self) -> None:
+                self.urls: list[str] = []
+
+            def fetch(self, url: str) -> str:
+                self.urls.append(url)
+                return html
+
+        client = FakeClient()
+        with patch(
+            "poller.ScrapingAntClient.from_environment",
+            return_value=client,
+        ):
+            result = poll_bookmyshow(
+                "The Odyssey",
+                theatre_url,
+            )
+
+        self.assertEqual(client.urls, [theatre_url])
+        self.assertEqual(result.theatre_name, "INOX: LUXE Phoenix Market City, Velachery")
+        self.assertEqual(result.booking_url, theatre_url)
+        self.assertEqual(result.event_ids, ("ET00480917",))
+        self.assertEqual(result.showtimes[0].format, "IMAX 2D")
 
 
 if __name__ == "__main__":

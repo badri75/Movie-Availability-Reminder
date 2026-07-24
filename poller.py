@@ -2,19 +2,18 @@
 
 from __future__ import annotations
 
+import html as html_module
 import json
 import os
 import re
 import unicodedata
 from dataclasses import dataclass
-from datetime import date
 from typing import Any, Iterator
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
-BMS_BASE_URL = "https://in.bookmyshow.com"
 SCRAPINGANT_ENDPOINT = "https://api.scrapingant.com/v2/general"
 INITIAL_STATE_MARKER = "window.__INITIAL_STATE__ = "
 
@@ -49,15 +48,6 @@ class ScrapedBooking:
 def _normalize(value: object) -> str:
     text = unicodedata.normalize("NFKC", str(value or ""))
     return re.sub(r"\s+", " ", text).strip().casefold()
-
-
-def _slugify(value: str) -> str:
-    value = unicodedata.normalize("NFKD", value)
-    value = "".join(character for character in value if not unicodedata.combining(character))
-    slug = re.sub(r"[^a-zA-Z0-9]+", "-", value).strip("-").lower()
-    if not slug:
-        raise ScrapingAntError("A BookMyShow URL slug could not be generated.")
-    return slug
 
 
 def _enabled(name: str, default: bool = False) -> bool:
@@ -165,15 +155,39 @@ def _walk(value: Any) -> Iterator[dict[str, Any]]:
             yield from _walk(child)
 
 
-def discover_theatre(state: Any, theatre_name: str) -> tuple[str, str]:
-    target = _normalize(theatre_name)
+def discover_scheduled_theatre(
+    state: Any,
+    theatre_url: str,
+    page_html: str = "",
+) -> str:
+    """Find the theatre name that corresponds to the URL's venue code."""
+    match = re.search(
+        r"/buytickets/([A-Za-z0-9]+)/(?:\d{8})/?$",
+        urlparse(theatre_url).path,
+    )
+    if not match:
+        raise ScrapingAntError("The configured theatre URL has no venue code.")
+    target_code = match.group(1).casefold()
+
     for value in _walk(state):
         name = value.get("VenueName") or value.get("venueName")
         code = value.get("VenueCode") or value.get("venueCode")
-        if _normalize(name) == target and re.fullmatch(r"[A-Za-z0-9]+", str(code or "")):
-            return str(name).strip(), str(code).strip()
+        if str(code or "").strip().casefold() == target_code and str(name or "").strip():
+            return str(name).strip()
+
+    title_match = re.search(
+        r"<title[^>]*>(.*?)</title>",
+        page_html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if title_match:
+        title = html_module.unescape(title_match.group(1))
+        theatre_name = re.split(r"\s+\|\s+", title, maxsplit=1)[0].strip()
+        if theatre_name:
+            return theatre_name
+
     raise ScrapingAntError(
-        f"Theatre '{theatre_name}' was not found in the ScrapingAnt BookMyShow response."
+        "BookMyShow did not provide the theatre name for the configured URL."
     )
 
 
@@ -277,25 +291,18 @@ def extract_movie_schedule(
 
 def poll_bookmyshow(
     movie_name: str,
-    city: str,
-    theatre_name: str,
-    target_date: date,
+    theatre_url: str,
     *,
     timeout_seconds: float = 90.0,
 ) -> ScrapedBooking:
-    """Resolve the theatre and extract its dated movie schedule via ScrapingAnt."""
+    """Extract a movie from one configured, dated theatre page via ScrapingAnt."""
     client = ScrapingAntClient.from_environment(timeout_seconds=timeout_seconds)
-    city_slug = _slugify(city)
-    theatre_slug = _slugify(theatre_name)
-
-    catalog_url = f"{BMS_BASE_URL}/{quote(city_slug)}/cinemas"
-    catalog_state = extract_initial_state(client.fetch(catalog_url))
-    resolved_name, venue_code = discover_theatre(catalog_state, theatre_name)
-
-    compact_date = target_date.strftime("%Y%m%d")
-    schedule_url = (
-        f"{BMS_BASE_URL}/cinemas/{quote(city_slug)}/{quote(theatre_slug)}/"
-        f"buytickets/{quote(venue_code)}/{compact_date}"
+    schedule_html = client.fetch(theatre_url)
+    schedule_state = extract_initial_state(schedule_html)
+    theatre_name = discover_scheduled_theatre(schedule_state, theatre_url, schedule_html)
+    return extract_movie_schedule(
+        schedule_state,
+        movie_name,
+        theatre_name,
+        theatre_url,
     )
-    schedule_state = extract_initial_state(client.fetch(schedule_url))
-    return extract_movie_schedule(schedule_state, movie_name, resolved_name, schedule_url)
