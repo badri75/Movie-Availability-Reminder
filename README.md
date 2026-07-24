@@ -143,11 +143,14 @@ Tests do not access BookMyShow or Telegram:
 python -m unittest discover -s tests -v
 ```
 
-## GitHub Actions (not deployed)
+## GitHub Actions triggered by cron-job.org
 
-The included workflow checks every ten minutes at minutes 7, 17, 27, 37, 47,
-and 57. Store the replacement values under **Repository settings → Secrets and
-variables → Actions** as:
+The included workflow uses `workflow_dispatch` only. It does not have an
+internal GitHub schedule, so cron-job.org can be the single scheduler without
+creating duplicate runs.
+
+Store these values under **Repository settings -> Secrets and variables ->
+Actions**:
 
 - `TELEGRAM_BOT_TOKEN`
 - `TELEGRAM_CHAT_ID`
@@ -158,8 +161,35 @@ is present. It uses Playwright only when that secret is absent. The only optiona
 GitHub Actions repository variable is `SCRAPERAPI_RENDER`; leave it unset to use
 the free-tier-oriented default.
 
+Create a fine-grained GitHub personal access token for only this repository.
+Give it **Actions: Read and write** repository permission. Do not use a GitHub
+password or put this token in the repository.
+
+Create a cron job at cron-job.org with these request settings:
+
+- URL:
+  `https://api.github.com/repos/badri75/Movie-Availability-Reminder/actions/workflows/bms-monitor.yml/dispatches`
+- Request method: `POST`
+- Request body: `{"ref":"master"}`
+- Header `Accept`: `application/vnd.github+json`
+- Header `Authorization`: `Bearer YOUR_FINE_GRAINED_GITHUB_TOKEN`
+- Header `X-GitHub-Api-Version`: `2026-03-10`
+- Header `Content-Type`: `application/json`
+
+Set the cron-job.org timezone to `Asia/Kolkata`. An hourly schedule, for example
+at minute 7 of every hour, performs about 720 normal checks in a 30-day month and
+is suitable for ScraperAPI's 1,000-credit free allowance when each check costs
+one credit. A ten-minute schedule performs about 4,320 normal checks per month
+and therefore does not fit that allowance. A confirmed positive result performs
+one additional check.
+
+Use cron-job.org's test-run option after saving. With the configured GitHub API
+version, a successful dispatch returns HTTP `200` with workflow-run details; the
+actual monitor then runs asynchronously in the repository's **Actions** tab.
+
 After Telegram delivery succeeds, the workflow disables itself to prevent repeat
-alerts. Scheduled GitHub Actions can be delayed, so a ten-minute schedule is not a
-strict timing guarantee.
+alerts. Disable the cron-job.org job as well after receiving the notification;
+otherwise its later dispatch requests will fail because the GitHub workflow is
+disabled.
 
 No repository, secrets, or workflow have been deployed by this project setup.

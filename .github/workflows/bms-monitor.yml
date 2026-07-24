@@ -2,9 +2,6 @@ name: Monitor The Odyssey bookings
 
 on:
   workflow_dispatch:
-  schedule:
-    # Every ten minutes, offset from the busy start of each hour.
-    - cron: "7,17,27,37,47,57 * * * *"
 
 permissions:
   contents: read
