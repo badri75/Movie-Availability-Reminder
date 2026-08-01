@@ -1,6 +1,6 @@
 {
   "movie_name": "Spider-Man: Brand New Day",
-  "theatre_url": "https://in.bookmyshow.com/cinemas/CHEN/pvr-vr-chennai-anna-nagar/buytickets/PCAN/20260730",
+  "theatre_url": "https://in.bookmyshow.com/cinemas/CHEN/pvr-vr-chennai-anna-nagar/buytickets/PCAN/20260803",
   "formats": "PXL",
-  "bookmyshow_retry_delay_seconds": 75
+  "bookmyshow_retry_delay_seconds": 60
 }
